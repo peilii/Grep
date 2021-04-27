@@ -10,9 +10,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define ENABLE_MUILTITHREAD 0
-#define MAX_THREAD_NUM 10
-#define DEBUG 0
+#define ENABLE_MUILTITHREAD 1
+#define DEBUG 1
 
 struct _Grep {
   /* Implement me */
@@ -266,7 +265,6 @@ void *MultithreadHelper(void *arg) {
 
   // exit will also terminate all other threads
   if (retval) exit(-1);
-
   return NULL;
 }
 
@@ -286,17 +284,15 @@ void *MultithreadHelper(void *arg) {
 int MultithreadDo(Grep *grep, const char *pattern, int linenumber, int filename,
                   GrepCallback cb) {
   int len = g_slist_length(grep->paths);
-  pthread_t threads[MAX_THREAD_NUM];
+  pthread_t threads[len];
   GSList *iterator = NULL;
 
   if (len == 0) {
     perror("empty grep paths");
     return -1;
   }
-  int i = 0, thread_num = 0;
-  for (iterator = grep->paths;
-       iterator && i < len && thread_num <= MAX_THREAD_NUM;
-       iterator = iterator->next, thread_num++) {
+  int i = 0;
+  for (iterator = grep->paths; iterator && i < len; iterator = iterator->next) {
     char *file = (char *)iterator->data;
     struct Param_t param;
     param.file = file;
@@ -309,29 +305,16 @@ int MultithreadDo(Grep *grep, const char *pattern, int linenumber, int filename,
     if (retval) {
       return -1;
     }
-
-    if (thread_num == MAX_THREAD_NUM - 1) {
-      // recycle threads
-      int j = 0;
-      while (j < MAX_THREAD_NUM) {
-        if (pthread_join(threads[j++], NULL)) {
-          perror("unable to recycle threads");
-          return -1;
-        }
-      }
-    }
-    thread_num = 0;
   }
-
+  if (DEBUG) printf("recycle all threads\n");
   // recycle all threads
   int j = 0;
-  while (j <= thread_num) {
+  while (j < len) {
     if (pthread_join(threads[j++], NULL)) {
       perror("unable to recycle threads");
       return -1;
     }
   }
-
   return 0;
 }
 
@@ -350,10 +333,12 @@ int MultithreadDo(Grep *grep, const char *pattern, int linenumber, int filename,
  */
 int GrepDo(Grep *grep, const char *pattern, int linenumber, int filename,
            GrepCallback cb) {
+  if (DEBUG) printf("********GrepDo*******\n");
   if (ENABLE_MUILTITHREAD) {
     if (DEBUG) printf("running in multithread mode\n");
     return MultithreadDo(grep, pattern, linenumber, filename, cb);
   }
   if (DEBUG) printf("running in single thread mode\n");
   return SingleThreadDo(grep, pattern, linenumber, filename, cb);
+  if (DEBUG) printf("GrepDo finished\n");
 }
