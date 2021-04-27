@@ -14,8 +14,6 @@
 #define MAX_THREAD_NUM 2
 #define DEBUG 1
 
-pthread_mutex_t mutex;
-
 struct _Grep {
   /* Implement me */
   GSList *paths;
@@ -30,6 +28,8 @@ struct Param_t {
   int len;
   GrepCallback cb;
 };
+
+pthread_mutex_t mutex;
 
 /**
  * GrepFree:
@@ -135,7 +135,6 @@ Grep *GrepInit(int recursive, const char **paths, size_t npaths) {
     if (addPaths(&processed_paths, path, recursive) == -1) {
       return NULL;
     }
-
     grep->paths = processed_paths;
     grep->curr = processed_paths;
     return grep;
@@ -244,13 +243,14 @@ int SingleThreadDo(Grep *grep, const char *pattern, int linenumber,
  */
 void *MultithreadHelper(void *arg) {
   struct Param_t *param = (struct Param_t *)arg;
+  char *file = NULL;
   pthread_mutex_lock(&mutex);
   // get a path to be processed
-  char *file = (char *)param->grep->curr->data;
-  if (! param->grep->curr->next) {
+  if (! param->grep->curr) {
     pthread_mutex_unlock(&mutex);
     return NULL;
   }
+  file = (char *)param->grep->curr->data;
   // update curr
   param->grep->curr = param->grep->curr->next;
   pthread_mutex_unlock(&mutex);
@@ -282,7 +282,8 @@ void *MultithreadHelper(void *arg) {
 
   // exit will also terminate all other threads
   if (retval) exit(-1);
-  return NULL;
+
+  return MultithreadHelper(arg);  
 }
 
 /**
@@ -302,16 +303,16 @@ int MultithreadDo(Grep *grep, const char *pattern, int linenumber, int filename,
                   GrepCallback cb) {
   int len = g_slist_length(grep->paths);
   pthread_t threads[MAX_THREAD_NUM];
-  GSList *iterator = NULL;
   pthread_mutex_init(&mutex, NULL);
-  
+  grep->curr = grep->paths;
+
   if (len == 0) {
     perror("empty grep paths");
     return -1;
   }
 
   struct Param_t param;
-  param.file = grep;
+  param.grep = grep;
   param.pattern = pattern;
   param.linenumber = linenumber;
   param.filename = filename;
@@ -324,7 +325,6 @@ int MultithreadDo(Grep *grep, const char *pattern, int linenumber, int filename,
       return -1;
     }
   }
-
   if (DEBUG) printf("recycle all threads\n");
   // recycle all threads
   int j = 0;
@@ -334,6 +334,7 @@ int MultithreadDo(Grep *grep, const char *pattern, int linenumber, int filename,
       return -1;
     }
   }
+  if (DEBUG) printf("GrepDo finished\n");
   return 0;
 }
 
@@ -359,5 +360,4 @@ int GrepDo(Grep *grep, const char *pattern, int linenumber, int filename,
   }
   if (DEBUG) printf("running in single thread mode\n");
   return SingleThreadDo(grep, pattern, linenumber, filename, cb);
-  if (DEBUG) printf("GrepDo finished\n");
 }
