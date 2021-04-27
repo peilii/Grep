@@ -11,15 +11,19 @@
 #include <unistd.h>
 
 #define ENABLE_MUILTITHREAD 1
+#define MAX_THREAD_NUM 2
 #define DEBUG 1
+
+pthread_mutex_t mutex;
 
 struct _Grep {
   /* Implement me */
   GSList *paths;
+  GSList *curr;
 };
 
 struct Param_t {
-  const char *file;
+  Grep *grep;
   const char *pattern;
   int linenumber;
   int filename;
@@ -133,6 +137,7 @@ Grep *GrepInit(int recursive, const char **paths, size_t npaths) {
     }
 
     grep->paths = processed_paths;
+    grep->curr = processed_paths;
     return grep;
   }
 
@@ -144,6 +149,7 @@ Grep *GrepInit(int recursive, const char **paths, size_t npaths) {
   }
   if (DEBUG) printf("update grep\n");
   grep->paths = processed_paths;
+  grep->curr = processed_paths;
   return grep;
 }
 
@@ -238,24 +244,35 @@ int SingleThreadDo(Grep *grep, const char *pattern, int linenumber,
  */
 void *MultithreadHelper(void *arg) {
   struct Param_t *param = (struct Param_t *)arg;
+  pthread_mutex_lock(&mutex);
+  // get a path to be processed
+  char *file = (char *)param->grep->curr->data;
+  if (! param->grep->curr->next) {
+    pthread_mutex_unlock(&mutex);
+    return NULL;
+  }
+  // update curr
+  param->grep->curr = param->grep->curr->next;
+  pthread_mutex_unlock(&mutex);
+
   int retval = 0;
   switch (param->filename) {
     case 0:
       // if there is just one file to match do NOT report filename,
       // otherwise do report it
       if (param->len == 1) {
-        retval = param->cb(param->file, param->pattern, param->linenumber, 0);
+        retval = param->cb(file, param->pattern, param->linenumber, 0);
       } else {
-        retval = param->cb(param->file, param->pattern, param->linenumber, 1);
+        retval = param->cb(file, param->pattern, param->linenumber, 1);
       }
       break;
     case 1:
       // do report filename
-      retval = param->cb(param->file, param->pattern, param->linenumber, 1);
+      retval = param->cb(file, param->pattern, param->linenumber, 1);
       break;
     case 2:
       // do NOT report filename, regardless of the number of files to match
-      retval = param->cb(param->file, param->pattern, param->linenumber, 0);
+      retval = param->cb(file, param->pattern, param->linenumber, 0);
       break;
     default:
       // not supported, should return error
@@ -284,32 +301,34 @@ void *MultithreadHelper(void *arg) {
 int MultithreadDo(Grep *grep, const char *pattern, int linenumber, int filename,
                   GrepCallback cb) {
   int len = g_slist_length(grep->paths);
-  pthread_t threads[len];
+  pthread_t threads[MAX_THREAD_NUM];
   GSList *iterator = NULL;
-
+  pthread_mutex_init(&mutex, NULL);
+  
   if (len == 0) {
     perror("empty grep paths");
     return -1;
   }
-  int i = 0;
-  for (iterator = grep->paths; iterator && i < len; iterator = iterator->next) {
-    char *file = (char *)iterator->data;
-    struct Param_t param;
-    param.file = file;
-    param.pattern = pattern;
-    param.linenumber = linenumber;
-    param.filename = filename;
-    param.len = len;
-    param.cb = cb;
-    int retval = pthread_create(&threads[i++], NULL, MultithreadHelper, &param);
+
+  struct Param_t param;
+  param.file = grep;
+  param.pattern = pattern;
+  param.linenumber = linenumber;
+  param.filename = filename;
+  param.len = len;
+  param.cb = cb;
+
+  for (int i = 0; i < MAX_THREAD_NUM; i++) {
+    int retval = pthread_create(&threads[i], NULL, MultithreadHelper, &param);
     if (retval) {
       return -1;
     }
   }
+
   if (DEBUG) printf("recycle all threads\n");
   // recycle all threads
   int j = 0;
-  while (j < len) {
+  while (j < MAX_THREAD_NUM) {
     if (pthread_join(threads[j++], NULL)) {
       perror("unable to recycle threads");
       return -1;
