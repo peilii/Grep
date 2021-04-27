@@ -17,6 +17,7 @@ header = [
 
 deps = [
   dependency('glib-2.0'),
+  dependency('threads'),
 ]
 
 cc_flags = [
