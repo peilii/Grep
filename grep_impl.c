@@ -10,8 +10,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define ENABLE_MUILTITHREAD 1
+#define ENABLE_MUILTITHREAD 0
 #define MAX_THREAD_NUM 10
+#define DEBUG 0
 
 struct _Grep {
     /* Implement me */
@@ -36,7 +37,8 @@ struct Param_t {
  */
 void GrepFree(Grep *grep) {
     /* Implement me */
-    printf("********GrepFree*******\n");
+    if (DEBUG) printf("********GrepFree*******\n");
+    
     if (!grep || !grep->paths) {
         perror("grep is empty");
         return;
@@ -104,7 +106,7 @@ static int addPaths(GSList **paths, const char *path, int recursive) {
  */
 Grep *GrepInit(int recursive, const char **paths, size_t npaths) {
     /* Implement me */
-    printf("********GrepInit*******\n");
+    if (DEBUG) printf("********GrepInit*******\n");
     Grep *grep = (Grep *)malloc(sizeof(Grep));
     GSList *processed_paths = NULL;
     char path[80];
@@ -114,16 +116,16 @@ Grep *GrepInit(int recursive, const char **paths, size_t npaths) {
         return NULL;
     }
     
-    printf("check npaths\n");
+    if (DEBUG) printf("check npaths\n");
     if (npaths == 0) {
-        printf("no path is given to GrepInit()\n");
+        if (DEBUG) printf("no path is given to GrepInit()\n");
         if (! recursive) {
-            printf("get standard input\n");
+            if (DEBUG) printf("get standard input\n");
             // no path is given to GrepInit() then get standard input
             strcpy(path, "/dev/stdin");
         } else {
             // work through current directory
-            printf("work through current directory\n");
+            if (DEBUG) printf("work through current directory\n");
             getcwd(path, sizeof(path));
         }
 
@@ -135,13 +137,13 @@ Grep *GrepInit(int recursive, const char **paths, size_t npaths) {
         return grep;
     }
 
-    printf("add Paths\n");
+    if (DEBUG) printf("add Paths\n");
     for (size_t i = 0; i < npaths; i++) {
         if (addPaths(&processed_paths, paths[i], recursive) == -1) {
             return NULL;
         }
     }
-    printf("update grep\n");
+    if (DEBUG) printf("update grep\n");
     grep->paths = processed_paths;
     return grep;
 }
@@ -204,7 +206,7 @@ int SingleThreadHelper(const char *file, const char *pattern, int linenumber,
  */
 int SingleThreadDo(Grep *grep, const char *pattern, int linenumber,
                    int filename, GrepCallback cb) {
-    printf("********SingleThreadDo*******\n");
+    if (DEBUG) printf("********SingleThreadDo*******\n");
     int len = g_slist_length(grep->paths);
     if (len == 0) {
         perror("empty grep paths");
@@ -348,8 +350,9 @@ int MultithreadDo(Grep *grep, const char *pattern, int linenumber, int filename,
 int GrepDo(Grep *grep, const char *pattern, int linenumber, int filename,
            GrepCallback cb) {
     if (ENABLE_MUILTITHREAD) {
+        if (DEBUG) printf("running in multithread mode\n");
         return MultithreadDo(grep, pattern, linenumber, filename, cb);
     }
-
+    if (DEBUG) printf("running in single thread mode\n");
     return SingleThreadDo(grep, pattern, linenumber, filename, cb);
 }
