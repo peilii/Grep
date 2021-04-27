@@ -243,47 +243,48 @@ int SingleThreadDo(Grep *grep, const char *pattern, int linenumber,
  */
 void *MultithreadHelper(void *arg) {
   struct Param_t *param = (struct Param_t *)arg;
-  char *file = NULL;
-  pthread_mutex_lock(&mutex);
-  // get a path to be processed
-  if (! param->grep->curr) {
+  while (1) {
+    char *file = NULL;
+    pthread_mutex_lock(&mutex);
+    // get a path to be processed
+    if (!param->grep->curr) {
+      pthread_mutex_unlock(&mutex);
+      break;
+    }
+    file = (char *)param->grep->curr->data;
+    // update curr
+    param->grep->curr = param->grep->curr->next;
     pthread_mutex_unlock(&mutex);
-    return NULL;
-  }
-  file = (char *)param->grep->curr->data;
-  // update curr
-  param->grep->curr = param->grep->curr->next;
-  pthread_mutex_unlock(&mutex);
 
-  int retval = 0;
-  switch (param->filename) {
-    case 0:
-      // if there is just one file to match do NOT report filename,
-      // otherwise do report it
-      if (param->len == 1) {
-        retval = param->cb(file, param->pattern, param->linenumber, 0);
-      } else {
+    int retval = 0;
+    switch (param->filename) {
+      case 0:
+        // if there is just one file to match do NOT report filename,
+        // otherwise do report it
+        if (param->len == 1) {
+          retval = param->cb(file, param->pattern, param->linenumber, 0);
+        } else {
+          retval = param->cb(file, param->pattern, param->linenumber, 1);
+        }
+        break;
+      case 1:
+        // do report filename
         retval = param->cb(file, param->pattern, param->linenumber, 1);
-      }
-      break;
-    case 1:
-      // do report filename
-      retval = param->cb(file, param->pattern, param->linenumber, 1);
-      break;
-    case 2:
-      // do NOT report filename, regardless of the number of files to match
-      retval = param->cb(file, param->pattern, param->linenumber, 0);
-      break;
-    default:
-      // not supported, should return error
-      perror("Unsupported filename");
-      retval = -1;
+        break;
+      case 2:
+        // do NOT report filename, regardless of the number of files to match
+        retval = param->cb(file, param->pattern, param->linenumber, 0);
+        break;
+      default:
+        // not supported, should return error
+        perror("Unsupported filename");
+        retval = -1;
+      // exit will also terminate all other threads
+      if (retval) exit(-1);
+    }
   }
 
-  // exit will also terminate all other threads
-  if (retval) exit(-1);
-
-  return MultithreadHelper(arg);  
+  return NULL;
 }
 
 /**
